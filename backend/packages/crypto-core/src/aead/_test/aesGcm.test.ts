@@ -7,11 +7,20 @@
  *
  * - aesGcmDecrypt
  *   - harus mengembalikan plaintext asli dari ciphertext dan tag Test Case 16
+ *   - harus melempar IntegrityError bila satu bit ciphertext, tag, AAD, atau IV
+ *     diubah, bila kunci salah, atau bila tag terpotong
  */
 import {aesGcmDecrypt, aesGcmEncrypt} from '../aesGcm';
+import {IntegrityError} from '../../errors/IntegrityError';
 
 const hex = (value: string): Buffer => Buffer.from(value, 'hex');
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex');
+
+const flipFirstBit = (bytes: Uint8Array): Buffer => {
+  const copy = Buffer.from(bytes);
+  copy[0] ^= 0x01;
+  return copy;
+};
 
 const TC16 = {
   key: 'feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308',
@@ -59,5 +68,43 @@ describe('aesGcmDecrypt', () => {
 
     // Assert
     expect(toHex(plaintext)).toBe(TC16.plaintext);
+  });
+});
+
+describe('aesGcmDecrypt integrity', () => {
+  const valid = {
+    key: hex(TC16.key),
+    iv: hex(TC16.iv),
+    ciphertext: hex(TC16.ciphertext),
+    tag: hex(TC16.tag),
+    aad: hex(TC16.aad),
+  };
+
+  it.each([
+    {
+      case: 'ciphertext is altered',
+      input: {...valid, ciphertext: flipFirstBit(valid.ciphertext)},
+    },
+    {case: 'tag is altered', input: {...valid, tag: flipFirstBit(valid.tag)}},
+    {case: 'AAD is altered', input: {...valid, aad: flipFirstBit(valid.aad)}},
+    {case: 'IV is altered', input: {...valid, iv: flipFirstBit(valid.iv)}},
+    {case: 'key is wrong', input: {...valid, key: flipFirstBit(valid.key)}},
+    {
+      case: 'tag is truncated',
+      input: {...valid, tag: valid.tag.subarray(0, 12)},
+    },
+  ])('should throw IntegrityError when $case', ({input}) => {
+    // Action
+    const decrypt = () =>
+      aesGcmDecrypt(
+        input.key,
+        input.iv,
+        input.ciphertext,
+        input.tag,
+        input.aad,
+      );
+
+    // Assert
+    expect(decrypt).toThrow(IntegrityError);
   });
 });

@@ -1,4 +1,8 @@
 import {createCipheriv, createDecipheriv} from 'node:crypto';
+import {IntegrityError} from '../errors/IntegrityError';
+
+const ALGORITHM = 'aes-256-gcm';
+const TAG_LENGTH = 16;
 
 export interface AesGcmResult {
   ciphertext: Uint8Array;
@@ -11,7 +15,9 @@ export function aesGcmEncrypt(
   plaintext: Uint8Array,
   aad: Uint8Array,
 ): AesGcmResult {
-  const cipher = createCipheriv('aes-256-gcm', key, iv, {authTagLength: 16});
+  const cipher = createCipheriv(ALGORITHM, key, iv, {
+    authTagLength: TAG_LENGTH,
+  });
   cipher.setAAD(aad);
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   return {ciphertext, tag: cipher.getAuthTag()};
@@ -24,10 +30,14 @@ export function aesGcmDecrypt(
   tag: Uint8Array,
   aad: Uint8Array,
 ): Uint8Array {
-  const decipher = createDecipheriv('aes-256-gcm', key, iv, {
-    authTagLength: 16,
-  });
-  decipher.setAuthTag(tag);
-  decipher.setAAD(aad);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  try {
+    const decipher = createDecipheriv(ALGORITHM, key, iv, {
+      authTagLength: TAG_LENGTH,
+    });
+    decipher.setAuthTag(tag);
+    decipher.setAAD(aad);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  } catch {
+    throw new IntegrityError();
+  }
 }
